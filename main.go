@@ -94,7 +94,7 @@ type Config struct {
 }
 
 func init() {
-	flag.StringVar(&AccessKey, "AK", "", "设置 AccessKey")
+	flag.StringVar(&AccessKey, "AK", "", "Set AccessKey")
 	flag.Parse()
 }
 
@@ -109,18 +109,21 @@ func main() {
 	if AccessKey != "" {
 		ak := strings.Split(AccessKey, "=")
 		if AccessKey == "" || len(ak) != 2 {
-			log.Error("-AK 必须指定 AccessKeyId 和 AccessKeySecret. (e.g -AK id=secret)")
-			os.Exit(0)
+			log.Error("AccessKeyId and AccessKeySecret must be specified. (e.g -AK id=secret)")
+			os.Exit(1)
 		}
 
 		cfg.AccessKeyId = ak[0]
 		cfg.AccessKeySecret = ak[1]
 
 		data, err := json.Marshal(cfg)
-		if err == nil {
-			_ = os.MkdirAll(ConfigPath, 0755)
-			_ = os.WriteFile(ConfigFile, data, 0755)
+		if err != nil {
+			log.Error("set AccessKey failed:", err.Error())
+			os.Exit(1)
 		}
+		_ = os.MkdirAll(ConfigPath, 0755)
+		_ = os.WriteFile(ConfigFile, data, 0755)
+		log.Info("set AccessKey success")
 		os.Exit(0)
 	}
 
@@ -130,15 +133,15 @@ func main() {
 	}
 	if err != nil {
 		log.Error(err)
-		os.Exit(0)
+		os.Exit(1)
 	}
 
 	AccessKeyId := tea.String(cfg.AccessKeyId)
 	AccessKeySecret := tea.String(cfg.AccessKeySecret)
 
 	if *util.Empty(AccessKeyId) || *util.Empty(AccessKeySecret) {
-		log.Error("请先设置 AccessKey")
-		os.Exit(0)
+		log.Error("need set AccessKey")
+		os.Exit(1)
 	}
 
 	client, err := CreateClient(AccessKeyId, AccessKeySecret)
@@ -148,7 +151,7 @@ func main() {
 
 	CertbotDomain := os.Getenv("CERTBOT_DOMAIN")
 	CertbotValidation := os.Getenv("CERTBOT_VALIDATION")
-	CertbotToken := os.Getenv("CERTBOT_TOKEN")
+	//CertbotToken := os.Getenv("CERTBOT_TOKEN")
 	CertbotAuthOutput := os.Getenv("CERTBOT_AUTH_OUTPUT")
 
 	if CertbotDomain == "" || CertbotValidation == "" {
@@ -158,8 +161,8 @@ func main() {
 
 	comps := strings.Split(CertbotDomain, ".")
 	if len(comps) < 2 {
-		log.Error("域名格式错误")
-		os.Exit(0)
+		log.Error("domain name error:", CertbotDomain)
+		os.Exit(1)
 	}
 
 	n := len(comps) - 2
@@ -171,34 +174,34 @@ func main() {
 		RR += fmt.Sprintf(".%s", strings.Join(comps[:n], "."))
 	}
 
-	log.Info(CertbotDomain, "-", Domain, Type, RR, CertbotValidation, CertbotToken)
+	add := strings.Count(CertbotAuthOutput, CertbotValidation) == 0
 
-	//os.Exit(0)
-
-	if CertbotAuthOutput == "" { // 添加
-		_, err := client.AddDomainRecord(Domain, Type, RR, CertbotValidation)
-		if err == nil {
-			log.Info("ADD SUCCESS")
+	if add { // 添加
+		log.Info("ADD -", CertbotDomain, CertbotValidation)
+		_, err1 := client.AddDomainRecord(Domain, Type, RR, CertbotValidation)
+		if err1 == nil {
+			log.Info("success")
 		} else {
-			log.Error(err)
+			log.Error("failed:", err1)
 		}
 
 		time.Sleep(3 * time.Second)
 
 	} else {
+		log.Info("DEL -", CertbotDomain, CertbotValidation)
 		resp, err1 := client.DescribeDomainRecords(Domain, Type, RR)
 		if err1 != nil {
-			log.Error("记录查询失败:", err1)
-			os.Exit(0)
+			log.Error("query failed:", err1)
+			os.Exit(1)
 		}
 
 		for _, record := range resp.Body.DomainRecords.Record {
 			if CertbotValidation == tea.StringValue(record.Value) && RR == tea.StringValue(record.RR) {
 				_, err2 := client.DeleteDomainRecord(record.RecordId)
 				if err2 == nil {
-					log.Info("DELETE SUCCESS")
+					log.Info("success")
 				} else {
-					log.Error(err2)
+					log.Error("failed:", err2)
 				}
 				break
 			}
